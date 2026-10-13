@@ -1,7 +1,7 @@
 # Pre-registration: Size-dependent accuracy loss under INT8 post-training quantization
 
 **Status:** frozen on 2026-10-07, before any model was trained, quantized or evaluated.
-**Course:** Research Methodology in Computer Science (5 ECTS). **Authors:** _[student 1]_, _[student 2]_.
+**Course:** Research Methodology in Computer Science (5 ECTS). **Authors:** ALI REZA HUSSAINIMHD & MALEK KISANIEHMHD MALEK KISANIEH.
 
 This document fixes the research question, hypotheses, measurements and analysis *before* results
 exist. Any later change is recorded in the deviation log at the end, with date and reason. Settings
