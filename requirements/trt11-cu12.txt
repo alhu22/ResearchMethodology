@@ -1,0 +1,5 @@
+# PREFERRED profile: TensorRT 11 (explicit INT8 quantization via NVIDIA ModelOpt), CUDA 12 wheels.
+# Requires: PyTorch built for CUDA 12.x installed first (torch.version.cuda starts with "12").
+-r common.txt
+tensorrt-cu12==11.3.0.99
+nvidia-modelopt[onnx]==0.47.0

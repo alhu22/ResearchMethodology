@@ -1,0 +1,15 @@
+# Packages shared by both TensorRT profiles. Install PyTorch FIRST (see README, Stage 2).
+# Pinned = the packages that define the experiment. Everything else is recorded by
+# scripts/01_environment_report.py (pip freeze) after installation.
+ultralytics==8.4.174
+pycocotools==2.0.11
+faster-coco-eval==1.8.0   # Ultralytics' own size-metric evaluation (independent cross-check)
+onnx==1.21.0
+onnxslim==0.1.97
+onnxruntime-gpu==1.24.4
+pyyaml==6.0.3
+pillow==12.3.0
+matplotlib==3.11.2
+pandas==3.0.6
+scipy==1.18.1
+tqdm==4.70.1

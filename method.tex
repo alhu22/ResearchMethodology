@@ -1,0 +1,131 @@
+\section{Method}
+\label{sec:method}
+
+\subsection{Study Design}
+This study examines whether post-training quantization to 8-bit integer precision
+(INT8) causes a larger relative detection-accuracy loss for small objects than
+for larger objects in aerial imagery. Precision is the experimental factor, with
+a TensorRT FP32 engine as the baseline, an INT8 engine as the primary treatment,
+and an FP16 engine as a control. Object size is an observed moderator. The
+primary comparison is paired: all precision conditions are evaluated on the same
+images.
+
+For each object-size group $g$, relative AP loss is defined as
+\begin{equation}
+\mathrm{RelDrop}_{g} =
+\frac{\mathrm{AP}^{\mathrm{FP32}}_{g}
+- \mathrm{AP}^{\mathrm{INT8}}_{g}}
+{\mathrm{AP}^{\mathrm{FP32}}_{g}}.
+\label{eq:relative-ap-drop}
+\end{equation}
+The primary contrast is
+\begin{equation}
+D = \mathrm{RelDrop}_{\mathrm{small}}
+- \mathrm{RelDrop}_{\mathrm{non\text{-}small}}.
+\label{eq:size-interaction}
+\end{equation}
+The alternative hypothesis is that $D>0$, indicating a greater relative
+quantization loss for small objects. The null hypothesis is $D\leq 0$.
+
+\subsection{Dataset and Annotation Processing}
+The experiment uses VisDrone2019-DET, with the training split used for model
+fine-tuning and INT8 calibration, the validation split used for checkpoint
+selection and development, and test-dev reserved for final evaluation. The
+preregistered split sizes are 6,471 training images, 548 validation images, and
+1,610 test-dev images. Dataset archives are verified by SHA-256 before
+processing.
+
+Annotations are converted to YOLO format for training and to COCO JSON for
+evaluation. VisDrone annotations with score zero, including ignored regions and
+the ``others'' category, are excluded. Bounding boxes are clipped to the image
+boundaries, and boxes with a width or height below one pixel after clipping are
+discarded. Consequently, detections on excluded ignored regions are treated as
+false positives, and the resulting absolute AP values are not directly
+comparable with scores from the official VisDrone evaluation toolkit.
+
+Object size is calculated from the clipped ground-truth box area in original
+image pixels. Small objects have area below $32^2=1{,}024$ pixels; non-small
+objects have area at least $1{,}024$ pixels. Secondary size groups are medium
+($32^2 \leq \mathrm{area} < 96^2$) and large
+($\mathrm{area} \geq 96^2=9{,}216$ pixels). Size-specific evaluation follows
+the COCO convention: ground truths outside a size range, detections matched to
+those ground truths, and unmatched detections outside the range are ignored for
+that range.
+
+\subsection{Model Training and Engine Construction}
+The detector is YOLOv8n initialized from COCO-pretrained weights. One model is
+fine-tuned on the training split at an image size of $640 \times 640$ for 100
+epochs, with batch size 16, random seed 0, and deterministic training enabled.
+Other training options use the Ultralytics defaults; no hyperparameter search is
+performed. The checkpoint with the best validation AP is frozen and used to
+construct all precision variants.
+
+The frozen checkpoint is exported once to ONNX with a static input shape of
+$1 \times 3 \times 640 \times 640$. TensorRT engines are then built in FP32,
+FP16, and INT8. Three independent INT8 calibration sets are sampled, one per
+seed (0, 1, and 2); each contains 512 images sampled uniformly from the training
+split. Calibration and evaluation use the same $640 \times 640$ letterbox
+preprocessing. The primary INT8 comparison uses calibration seed 0; seeds 1 and
+2 are reserved for robustness analysis. The TensorRT 11 toolchain uses explicit
+quantize/dequantize quantization through NVIDIA ModelOpt. If the preregistered
+TensorRT 10 fallback is required, its implicit calibration path is recorded as
+a deviation from the preferred toolchain.
+
+\subsection{Evaluation Measures}
+The frozen PyTorch checkpoint and each available TensorRT engine are evaluated
+using identical inference settings: confidence threshold 0.001, non-maximum
+suppression (NMS) intersection-over-union threshold 0.7, a maximum of 500
+detections per image, batch size 1, and non-rectangular inference at image size
+640. The primary accuracy measure is COCO-style AP averaged over IoU thresholds
+0.50 through 0.95 (AP@[.5:.95]); AP at IoU 0.50 (AP@0.5) is secondary.
+Evaluation is reported overall and by the predefined object-size groups.
+
+Predictions are matched to ground truth using pycocotools, with at most 500
+detections per image. The evaluation implementation also stores the per-image
+match records used in the bootstrap analysis. Its AP recomputation is checked
+against pycocotools and must agree within an absolute difference of $10^{-9}$.
+As implementation checks, the PyTorch FP32 checkpoint is compared with the
+TensorRT FP32 engine, and the custom evaluation results are checked against
+Ultralytics validation metrics.
+
+All development and debugging evaluations use validation data. The test-dev
+split is reserved for the final evaluation and is evaluated only after the
+pipeline and analysis procedure are complete. The confirmatory comparison is
+TensorRT FP32 versus INT8 calibration seed 0 on test-dev.
+
+\subsection{Statistical Analysis}
+The unit of resampling is the image. A paired nonparametric bootstrap draws
+2,000 resamples of the 1,610 test-dev images with replacement, using random
+seed 0. The same resampled image indices are used for every precision condition
+and contrast. For each resample, AP is recomputed by object-size group from the
+stored match records; detections are not re-matched.
+
+The confirmatory statistic is $D$ in \eqref{eq:size-interaction} for the
+FP32-versus-INT8-seed-0 comparison using AP@[.5:.95]. A two-sided 95\%
+percentile bootstrap confidence interval is calculated for $D$. If its lower
+bound is above zero, the null hypothesis is rejected in favor of a greater
+relative loss for small objects. If the interval contains zero, the result is
+inconclusive; if its upper bound is below zero, the result is contrary to the
+alternative hypothesis.
+
+All other comparisons are exploratory and are reported with confidence
+intervals without additional hypothesis tests. They include absolute AP drops,
+AP@0.5, small/medium/large AP, INT8 calibration seeds 1 and 2, and the FP16
+control. The INT8 result is considered directionally robust if $D$ has the same
+sign for all three calibration seeds. FP16 is used to interpret whether a
+size-dependent effect is specific to INT8: a similar pattern under FP16 would
+prevent attributing the effect to INT8 alone.
+
+\subsection{Inference Latency}
+Latency is a secondary descriptive measure, not part of the confirmatory
+hypothesis test. The preregistered benchmark measures one engine forward call
+through Ultralytics \texttt{AutoBackend} using a preprocessed
+$1 \times 3 \times 640 \times 640$ tensor already resident in GPU memory.
+Preprocessing, host-to-device transfer, decoding, and NMS are excluded. GPU
+execution is synchronized immediately before and after timed calls, which are
+measured with \texttt{time.perf\_counter}. FP32 and INT8 seed 0 are measured in
+three alternating-order rounds; each round has 200 warm-up calls followed by
+1,000 timed calls. The report is to include the median, interquartile range,
+per-round medians, and the ratio of the FP32 and INT8 medians as the speed-up.
+No statistical tests are planned for latency. This benchmark is reported only
+if it is run; otherwise latency is omitted and the omission is documented.

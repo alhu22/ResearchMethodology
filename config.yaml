@@ -1,0 +1,155 @@
+# =====================================================================================
+# Central experiment configuration — the single source of truth for every setting.
+#
+# Rule: scripts read their settings ONLY from this file. If a value must change after
+# the design was frozen (PREREGISTRATION.md, frozen 2026-10-07), record the change in
+# the "Deviation log" section of PREREGISTRATION.md with date and reason.
+# =====================================================================================
+
+project:
+  name: int8-size-study
+  global_seed: 0
+
+paths:                       # relative to the project root
+  data_root: data
+  raw_dir: data/raw
+  dataset_dir: data/VisDrone
+  models_dir: models
+  results_dir: results
+  ultralytics_config_dir: .ultralytics   # keeps Ultralytics settings/fonts inside the project
+
+# -------------------------------------------------------------------------------------
+# Stage 2 — environment smoke test (functional check only, NOT an experiment)
+# -------------------------------------------------------------------------------------
+smoke_test:
+  weights_url: https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n.pt
+  weights_sha256: f59b3d833e2ff32e194b5bb8e08d211dc7c5bdf144b90d2c8412c47ccfc83b36
+  coco8_url: https://github.com/ultralytics/assets/releases/download/v0.0.0/coco8.zip
+  coco8_sha256: 54c67fe9ef88313e021ec0e92b73c200167bb0a86633e8df8658d832cca828c9
+  imgsz: 640
+  device: 0
+
+# -------------------------------------------------------------------------------------
+# Stage 3 — dataset
+# -------------------------------------------------------------------------------------
+dataset:
+  name: VisDrone2019-DET
+  base_url: https://github.com/ultralytics/assets/releases/download/v0.0.0
+  archives:                  # split name used in this project -> archive + SHA-256
+    train:
+      file: VisDrone2019-DET-train.zip
+      sha256: 86a77eba93137bfc16e4993860de9245b0675c0dba0d3ab98fb458699e256f84
+      extracted_dir: VisDrone2019-DET-train
+    val:
+      file: VisDrone2019-DET-val.zip
+      sha256: abeea063037e5d20398837deb11084e652402a34ddf4f207bdf541a6f2a35ef9
+      extracted_dir: VisDrone2019-DET-val
+    test:                    # = VisDrone2019-DET test-dev
+      file: VisDrone2019-DET-test-dev.zip
+      sha256: b28a94b06dfd9e36ce77ff8155fb82b9d2c030f198a76105933bd56c6ea6a68d
+      extracted_dir: VisDrone2019-DET-test-dev
+  roles:                     # fixed roles of the splits (see PREREGISTRATION.md)
+    training_and_calibration_pool: train
+    development: val
+    final_evaluation: test
+  # Class index i (0-based, YOLO labels) corresponds to VisDrone category i+1 and to
+  # COCO-JSON category_id i+1 (this matches Ultralytics' prediction JSON for custom data).
+  class_names: [pedestrian, people, bicycle, car, van, truck, tricycle, awning-tricycle, bus, motor]
+  conversion:
+    skip_score_zero: true        # VisDrone score=0 marks "ignored regions" (cat 0) and "others" (cat 11)
+    skip_categories: [0, 11]     # also skipped if they ever appear with score=1
+    clip_boxes_to_image: true
+    min_box_side_px: 1           # boxes thinner than this after clipping are dropped
+  sanity_checks:
+    n_sample_images_per_split: 6
+    sample_seed: 0
+    min_objects_per_primary_bin_test: 500   # warning threshold only
+
+# -------------------------------------------------------------------------------------
+# Object size definition (frozen) — area = w*h of the ground-truth box in ORIGINAL image px
+# -------------------------------------------------------------------------------------
+object_size:
+  small_upper_exclusive_px2: 1024     # small:  area <  32^2
+  large_lower_inclusive_px2: 9216     # large:  area >= 96^2 ; medium: 32^2 <= area < 96^2
+  primary_contrast: [small, non_small]   # non_small: area >= 32^2
+
+# -------------------------------------------------------------------------------------
+# Stage 4 — model / fine-tuning (implemented in a later stage)
+# -------------------------------------------------------------------------------------
+model:
+  architecture: yolov8n
+  pretrained_weights_url: https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n.pt
+  pretrained_weights_sha256: f59b3d833e2ff32e194b5bb8e08d211dc7c5bdf144b90d2c8412c47ccfc83b36
+
+training:
+  imgsz: 640
+  epochs: 100
+  batch: 16
+  seed: 0
+  deterministic: true
+  device: 0
+  # all other hyper-parameters: Ultralytics defaults (no tuning; recorded automatically)
+  dev_run:                    # tag 'dev' only: quick pipeline test, never reported
+    epochs: 3
+    fraction: 0.1
+
+# -------------------------------------------------------------------------------------
+# Stage 5 — engines (implemented in a later stage)
+# -------------------------------------------------------------------------------------
+export:
+  format: engine
+  imgsz: 640
+  batch: 1
+  dynamic: false
+  simplify: true
+  device: 0
+  conditions:                 # name -> Ultralytics `quantize` value
+    fp32: null
+    fp16: 16
+    int8: 8
+
+calibration:
+  source_split: train
+  n_images: 512
+  seeds: [0, 1, 2]
+  primary_seed: 0
+
+# -------------------------------------------------------------------------------------
+# Stage 6 — evaluation (implemented in a later stage)
+# -------------------------------------------------------------------------------------
+evaluation:
+  final_split: test
+  development_split: val
+  conf: 0.001
+  iou: 0.7
+  max_det: 500
+  batch: 1
+  rect: false
+  coco_max_dets: [1, 100, 500]
+  primary_metric: AP50_95
+  secondary_metrics: [AP50]
+
+# -------------------------------------------------------------------------------------
+# Stage 8 — statistics (implemented in a later stage)
+# -------------------------------------------------------------------------------------
+statistics:
+  bootstrap_reps: 2000
+  ci_level: 0.95
+  bootstrap_seed: 0
+  resampling_unit: image      # 'sequence' only if decided after Stage 3 (see PREREGISTRATION.md)
+  primary_comparison:
+    baseline: fp32
+    treatment: int8_seed0
+
+# -------------------------------------------------------------------------------------
+# Stage 7 — latency (implemented in a later stage)
+# -------------------------------------------------------------------------------------
+latency:
+  conditions: [fp32, int8_seed0]
+  rounds: 3
+  warmup_iters: 200
+  timed_iters: 1000
+  round_orders:
+    - [fp32, int8_seed0]
+    - [int8_seed0, fp32]
+    - [fp32, int8_seed0]

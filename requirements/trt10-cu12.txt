@@ -1,0 +1,4 @@
+# FALLBACK profile: TensorRT 10 (implicit INT8 calibration), CUDA 12 wheels.
+# Use only if the TensorRT 11 smoke test fails; record the switch in PREREGISTRATION.md.
+-r common.txt
+tensorrt-cu12==10.16.1.11
